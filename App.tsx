@@ -367,6 +367,26 @@ const App: React.FC = () => {
         {/* Settings Panel - NOW BELOW (Order 2) */}
         <aside className="w-full lg:w-80 flex-shrink-0 space-y-4 order-2 pb-10">
 
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-3">
+            <div
+              onClick={() => document.getElementById('bulk-upload')?.click()}
+              className="border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl p-3 cursor-pointer transition-all group flex items-center justify-center gap-3 text-center"
+            >
+              <CloudUpload size={20} className="text-slate-400 group-hover:text-indigo-600" />
+              <span className="text-xs font-bold text-slate-600 group-hover:text-indigo-700">添加本地图片</span>
+              <input id="bulk-upload" type="file" multiple accept="image/*" className="hidden" onChange={handleGlobalUpload} />
+            </div>
+
+            <button
+              onClick={handleDownload}
+              disabled={isExporting}
+              className="w-full flex items-center justify-center gap-2 p-3.5 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-slate-300 hover:shadow-xl hover:-translate-y-0.5 font-bold text-sm disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isExporting ? '正在渲染...' : '下载高清大图'}
+              {!isExporting && <Download size={16} />}
+            </button>
+          </div>
+
           {/* 1. Export Settings & Download (Top Priority) */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <button
@@ -420,26 +440,6 @@ const App: React.FC = () => {
                 )}
               </div>
             )}
-          </div>
-
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-3">
-            <div
-              onClick={() => document.getElementById('bulk-upload')?.click()}
-              className="border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl p-3 cursor-pointer transition-all group flex items-center justify-center gap-3 text-center"
-            >
-              <CloudUpload size={20} className="text-slate-400 group-hover:text-indigo-600" />
-              <span className="text-xs font-bold text-slate-600 group-hover:text-indigo-700">添加本地图片</span>
-              <input id="bulk-upload" type="file" multiple accept="image/*" className="hidden" onChange={handleGlobalUpload} />
-            </div>
-
-            <button
-              onClick={handleDownload}
-              disabled={isExporting}
-              className="w-full flex items-center justify-center gap-2 p-3.5 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-slate-300 hover:shadow-xl hover:-translate-y-0.5 font-bold text-sm disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              {isExporting ? '正在渲染...' : '下载高清大图'}
-              {!isExporting && <Download size={16} />}
-            </button>
           </div>
 
           {/* 2. Layout & Actions */}
