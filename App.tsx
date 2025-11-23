@@ -65,7 +65,7 @@ const App: React.FC = () => {
   const [backgroundClass, setBackgroundClass] = useState<string>("bg-white");
 
   // Export Settings
-  const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('jpeg');
+  const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('png');
   const [exportQuality, setExportQuality] = useState<number>(0.85);
 
   // UI State (Collapsible Sections)
@@ -124,8 +124,8 @@ const App: React.FC = () => {
       let finalFormat = exportFormat;
 
       try {
-        // Attempt 1: Desired settings (3442px width)
-        result = await generateImage(3442, exportFormat, exportQuality);
+        // Attempt 1: Desired settings (2448px width)
+        result = await generateImage(2448, exportFormat, exportQuality);
       } catch (err: any) {
         console.warn("Attempt 1 failed:", err);
 
@@ -391,8 +391,8 @@ const App: React.FC = () => {
                     <div className="flex justify-between items-center mb-1.5">
                       <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5"><Sliders size={12} /> 压缩质量</label>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${exportQuality > 0.9 ? 'bg-green-100 text-green-700' :
-                          exportQuality > 0.7 ? 'bg-blue-100 text-blue-700' :
-                            'bg-amber-100 text-amber-700'
+                        exportQuality > 0.7 ? 'bg-blue-100 text-blue-700' :
+                          'bg-amber-100 text-amber-700'
                         }`}>
                         {Math.round(exportQuality * 100)}%
                       </span>
@@ -427,8 +427,8 @@ const App: React.FC = () => {
                   <button
                     onClick={() => setLayout(LayoutType.GRID_2X2)}
                     className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${layout === LayoutType.GRID_2X2
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-500'
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
+                      : 'border-slate-200 hover:border-slate-300 text-slate-500'
                       }`}
                   >
                     <Grid2X2 size={20} className="mb-1" />
@@ -437,8 +437,8 @@ const App: React.FC = () => {
                   <button
                     onClick={() => setLayout(LayoutType.GRID_3X3)}
                     className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${layout === LayoutType.GRID_3X3
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-500'
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
+                      : 'border-slate-200 hover:border-slate-300 text-slate-500'
                       }`}
                   >
                     <Grid3X3 size={20} className="mb-1" />
