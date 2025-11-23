@@ -68,8 +68,8 @@ const App: React.FC = () => {
   const [backgroundClass, setBackgroundClass] = useState<string>("bg-white");
 
   // Export Settings
-  const [exportFormat, setExportFormat] = useState<'png' | 'jpeg' | 'heic'>('png');
-  const [exportQuality, setExportQuality] = useState<number>(0.92);
+  const [exportFormat, setExportFormat] = useState<'png' | 'jpeg' | 'heic'>('jpeg');
+  const [exportQuality, setExportQuality] = useState<number>(0.85);
 
   // UI State (Collapsible Sections)
   const [isExportOpen, setIsExportOpen] = useState(false);
