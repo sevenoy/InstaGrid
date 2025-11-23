@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { toPng, toBlob } from 'html-to-image';
-import heic2any from 'heic2any';
 import {
   Download,
   Grid2X2,
@@ -21,9 +20,7 @@ import {
   Scaling,
   PaintBucket,
   Shuffle,
-
   Zap,
-
   Settings,
   FileImage,
   Sliders,
@@ -68,7 +65,7 @@ const App: React.FC = () => {
   const [backgroundClass, setBackgroundClass] = useState<string>("bg-white");
 
   // Export Settings
-  const [exportFormat, setExportFormat] = useState<'png' | 'jpeg' | 'heic'>('jpeg');
+  const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('jpeg');
   const [exportQuality, setExportQuality] = useState<number>(0.85);
 
   // UI State (Collapsible Sections)
@@ -107,20 +104,15 @@ const App: React.FC = () => {
     if (!collageRef.current) return;
     setIsExporting(true);
 
-    const generateImage = async (width: number, format: 'png' | 'jpeg' | 'heic', quality: number): Promise<string | Blob | null> => {
+    const generateImage = async (width: number, format: 'png' | 'jpeg', quality: number): Promise<string | Blob | null> => {
       const currentWidth = collageRef.current!.offsetWidth;
       const ratio = width / currentWidth;
       const options = { quality, pixelRatio: ratio };
 
       if (format === 'png') {
         return await toPng(collageRef.current!, { ...options, quality: 1.0 });
-      } else if (format === 'heic') {
-        const blob = await toBlob(collageRef.current!, { ...options, type: 'image/jpeg', quality: 1.0 });
-        if (!blob) throw new Error("Canvas to Blob failed");
-        const heicBlob = await heic2any({ blob, toType: 'image/heic', quality: quality });
-        return Array.isArray(heicBlob) ? heicBlob[0] : heicBlob;
       } else {
-        return await toBlob(collageRef.current!, { ...options, type: `image/${format}` });
+        return await toBlob(collageRef.current!, { ...options, type: 'image/jpeg' });
       }
     };
 
@@ -137,41 +129,17 @@ const App: React.FC = () => {
       } catch (err: any) {
         console.warn("Attempt 1 failed:", err);
 
-        // Attempt 2: Fallback to JPEG if HEIC failed
-        if (exportFormat === 'heic') {
-          try {
-            // Only alert if we are actually retrying, to keep user informed
-            // alert("HEIC 导出遇到问题，正在尝试自动转为 JPG 格式..."); 
-            // Actually, silent fallback is better UX if it works, but maybe we should notify?
-            // Let's notify via a toast or just proceed. 
-            // Given the user's report, explicit feedback is better.
-            const confirmFallback = window.confirm(`HEIC 导出失败 (${err.message})。\n是否尝试以 JPG 格式导出？`);
-            if (!confirmFallback) throw err;
+        // Attempt 2: Fallback to lower resolution (1920px)
+        const confirmLowRes = window.confirm(`高清导出失败 (${err.message})。\n是否尝试降低分辨率 (1920px) 导出？`);
+        if (!confirmLowRes) throw err;
 
-            result = await generateImage(3442, 'jpeg', exportQuality);
-            finalFormat = 'jpeg';
-          } catch (err2: any) {
-            console.warn("Attempt 2 failed:", err2);
-            // Attempt 3: Fallback to lower resolution (1920px)
-            const confirmLowRes = window.confirm(`高清导出失败 (${err2.message})。\n是否尝试降低分辨率 (1920px) 导出？`);
-            if (!confirmLowRes) throw err2;
-
-            result = await generateImage(1920, 'jpeg', 0.9);
-            finalFormat = 'jpeg';
-          }
-        } else {
-          // Attempt 3 directly for non-HEIC (Low Res)
-          const confirmLowRes = window.confirm(`高清导出失败 (${err.message})。\n是否尝试降低分辨率 (1920px) 导出？`);
-          if (!confirmLowRes) throw err;
-
-          result = await generateImage(1920, exportFormat, exportQuality);
-        }
+        result = await generateImage(1920, exportFormat, exportQuality);
       }
 
       if (result) {
         const url = typeof result === 'string' ? result : URL.createObjectURL(result);
         const link = document.createElement('a');
-        link.download = `collage-${layout}-${Date.now()}.${finalFormat === 'heic' ? 'heic' : finalFormat === 'jpeg' ? 'jpg' : 'png'}`;
+        link.download = `collage-${layout}-${Date.now()}.${finalFormat === 'jpeg' ? 'jpg' : 'png'}`;
         link.href = url;
         link.click();
 
@@ -410,7 +378,6 @@ const App: React.FC = () => {
                       onChange={(e) => setExportFormat(e.target.value as any)}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
-                      <option value="heic">HEIC (默认 - 高效)</option>
                       <option value="jpeg">JPG (通用)</option>
                       <option value="png">PNG (无损 - 极大)</option>
                     </select>
@@ -424,8 +391,8 @@ const App: React.FC = () => {
                     <div className="flex justify-between items-center mb-1.5">
                       <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5"><Sliders size={12} /> 压缩质量</label>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${exportQuality > 0.9 ? 'bg-green-100 text-green-700' :
-                        exportQuality > 0.7 ? 'bg-blue-100 text-blue-700' :
-                          'bg-amber-100 text-amber-700'
+                          exportQuality > 0.7 ? 'bg-blue-100 text-blue-700' :
+                            'bg-amber-100 text-amber-700'
                         }`}>
                         {Math.round(exportQuality * 100)}%
                       </span>
@@ -460,8 +427,8 @@ const App: React.FC = () => {
                   <button
                     onClick={() => setLayout(LayoutType.GRID_2X2)}
                     className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${layout === LayoutType.GRID_2X2
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-500'
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-500'
                       }`}
                   >
                     <Grid2X2 size={20} className="mb-1" />
@@ -470,8 +437,8 @@ const App: React.FC = () => {
                   <button
                     onClick={() => setLayout(LayoutType.GRID_3X3)}
                     className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${layout === LayoutType.GRID_3X3
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-500'
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-500'
                       }`}
                   >
                     <Grid3X3 size={20} className="mb-1" />
