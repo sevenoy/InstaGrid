@@ -56,7 +56,7 @@ const App: React.FC = () => {
   const [gap, setGap] = useState<number>(3);
   const [outerPadding, setOuterPadding] = useState<number>(3);
   const [borderRadius, setBorderRadius] = useState<number>(6);
-  const [aspectRatio, setAspectRatio] = useState<string>("1 / 1");
+  const [aspectRatio, setAspectRatio] = useState<string>("2 / 3");
   const [backgroundClass, setBackgroundClass] = useState<string>("bg-white");
 
   const [isExporting, setIsExporting] = useState(false);
@@ -92,9 +92,14 @@ const App: React.FC = () => {
       // Small delay to ensure render states are clean
       await new Promise(resolve => setTimeout(resolve, 100));
 
+      // Calculate pixel ratio to ensure width is 4672px
+      const targetWidth = 4672;
+      const currentWidth = collageRef.current.offsetWidth;
+      const ratio = targetWidth / currentWidth;
+
       const dataUrl = await toPng(collageRef.current, {
         quality: 1.0,
-        pixelRatio: 2,
+        pixelRatio: ratio,
         // We don't set backgroundColor here so transparent backgrounds work if selected
       });
 
@@ -202,6 +207,7 @@ const App: React.FC = () => {
   };
 
   const ratioOptions = [
+    { label: '2:3', value: '2 / 3', icon: RectangleVertical },
     { label: '1:1', value: '1 / 1', icon: Square },
     { label: '4:3', value: '4 / 3', icon: RectangleHorizontal },
     { label: '3:4', value: '3 / 4', icon: RectangleVertical },
@@ -269,8 +275,8 @@ const App: React.FC = () => {
               <button
                 onClick={() => setLayout(LayoutType.GRID_2X2)}
                 className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${layout === LayoutType.GRID_2X2
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-500'
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
+                  : 'border-slate-200 hover:border-slate-300 text-slate-500'
                   }`}
               >
                 <Grid2X2 size={20} className="mb-1" />
@@ -279,8 +285,8 @@ const App: React.FC = () => {
               <button
                 onClick={() => setLayout(LayoutType.GRID_3X3)}
                 className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${layout === LayoutType.GRID_3X3
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-500'
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
+                  : 'border-slate-200 hover:border-slate-300 text-slate-500'
                   }`}
               >
                 <Grid3X3 size={20} className="mb-1" />
@@ -317,8 +323,8 @@ const App: React.FC = () => {
                   key={option.label}
                   onClick={() => setAspectRatio(option.value)}
                   className={`flex flex-col items-center justify-center p-2 rounded-lg border transition-all ${aspectRatio === option.value
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : 'border-slate-100 hover:border-slate-300 text-slate-400'
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-100 hover:border-slate-300 text-slate-400'
                     }`}
                   title={option.label}
                 >
