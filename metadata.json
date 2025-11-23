@@ -1,0 +1,5 @@
+{
+  "name": "InstaGrid 拼图工具",
+  "description": "一个高级拖拽式照片拼图工具，支持2x2和3x3布局，可即时替换图片并导出高清大图。",
+  "requestFramePermissions": []
+}
