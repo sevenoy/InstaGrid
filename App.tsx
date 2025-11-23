@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { toPng } from 'html-to-image';
+import { toPng, toBlob } from 'html-to-image';
 import {
   Download,
   Grid2X2,
@@ -20,7 +20,11 @@ import {
   Scaling,
   PaintBucket,
   Shuffle,
-  Zap
+
+  Zap,
+  Settings,
+  FileImage,
+  Sliders
 } from 'lucide-react';
 import { CollageGrid } from './components/CollageGrid';
 import { CollageItem, LayoutType } from './types';
@@ -58,6 +62,10 @@ const App: React.FC = () => {
   const [borderRadius, setBorderRadius] = useState<number>(6);
   const [aspectRatio, setAspectRatio] = useState<string>("2 / 3");
   const [backgroundClass, setBackgroundClass] = useState<string>("bg-white");
+
+  // Export Settings
+  const [exportFormat, setExportFormat] = useState<'png' | 'jpeg' | 'webp'>('webp');
+  const [exportQuality, setExportQuality] = useState<number>(0.92);
 
   const [isExporting, setIsExporting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -97,16 +105,47 @@ const App: React.FC = () => {
       const currentWidth = collageRef.current.offsetWidth;
       const ratio = targetWidth / currentWidth;
 
-      const dataUrl = await toPng(collageRef.current, {
-        quality: 1.0,
+      let dataUrl;
+      const options = {
+        quality: exportQuality,
         pixelRatio: ratio,
         // We don't set backgroundColor here so transparent backgrounds work if selected
-      });
+      };
 
-      const link = document.createElement('a');
-      link.download = `collage-${layout}-${Date.now()}.png`;
-      link.href = dataUrl;
-      link.click();
+      if (exportFormat === 'png') {
+        dataUrl = await toPng(collageRef.current, { ...options, quality: 1.0 });
+      } else {
+        // For WebP and JPEG, we use toBlob or toJpeg (toBlob is more flexible)
+        // html-to-image toBlob supports type and quality
+        // However, toPng returns a dataURL string. toBlob returns a Blob.
+        // Let's use toPng/toJpeg/toBlob appropriately or convert.
+        // Actually, toPng is for PNG. toJpeg is for JPEG. 
+        // For WebP, we can use toBlob with type='image/webp' or use toPng and convert (inefficient).
+        // Let's use toBlob for everything to be consistent, but toPng is easier for the 'a' tag download if we want a dataURL.
+        // But creating an object URL from a blob is better for large files anyway.
+
+        const blob = await toBlob(collageRef.current, {
+          ...options,
+          type: `image/${exportFormat}`
+        });
+
+        if (blob) {
+          dataUrl = URL.createObjectURL(blob);
+        }
+      }
+
+      if (dataUrl) {
+        const link = document.createElement('a');
+        link.download = `collage-${layout}-${Date.now()}.${exportFormat}`;
+        link.href = dataUrl;
+        link.click();
+
+        // Revoke object URL if it was a blob
+        if (exportFormat !== 'png') {
+          URL.revokeObjectURL(dataUrl);
+        }
+      }
+
     } catch (err) {
       console.error('Failed to download image', err);
       alert("生成图片失败，请重试。");
@@ -404,6 +443,60 @@ const App: React.FC = () => {
                   title={bg.name}
                 />
               ))}
+            </div>
+          </div>
+
+          {/* Export Settings */}
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+            <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
+              <Settings size={12} /> 导出设置
+            </h3>
+
+            <div className="space-y-4">
+              {/* Format Selection */}
+              <div>
+                <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5 mb-2"><FileImage size={12} /> 图片格式</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['webp', 'jpeg', 'png'] as const).map((fmt) => (
+                    <button
+                      key={fmt}
+                      onClick={() => setExportFormat(fmt)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold uppercase transition-all ${exportFormat === fmt
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                    >
+                      {fmt === 'jpeg' ? 'JPG' : fmt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quality Slider (Hidden for PNG) */}
+              {exportFormat !== 'png' && (
+                <div className="animate-fade-in">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5"><Sliders size={12} /> 压缩质量</label>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${exportQuality > 0.9 ? 'bg-green-100 text-green-700' :
+                      exportQuality > 0.7 ? 'bg-blue-100 text-blue-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                      {Math.round(exportQuality * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range" min="0.1" max="1.0" step="0.01"
+                    value={exportQuality}
+                    onChange={(e) => setExportQuality(Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {exportQuality > 0.9 ? '极佳画质 (推荐)' :
+                      exportQuality > 0.7 ? '平衡画质与体积' :
+                        '较小体积'}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
