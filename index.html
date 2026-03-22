@@ -4,20 +4,33 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>InstaGrid - 拼图工具</title>
+  <title>InstaGrid - 免费高清在线拼图与多图合成工具</title>
+  <meta name="description" content="InstaGrid 是一款专业的高清在线拼图工具。支持拖拽极速替换、2x2/3x3无缝布局、自定义边距和背景，免登录直接导出无损超清大图。" />
+  <meta name="keywords" content="拼图工具,在线拼图,多图合成,相片排版,collage,InstaGrid" />
+  <meta property="og:title" content="InstaGrid - 免费高清在线拼图与多图合成工具" />
+  <meta property="og:description" content="专业级超清在线拼图工具，即刻体验极速图片排版与导出。" />
   <link rel="icon" type="image/png" href="/icons/icon-192.png" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
   <link rel="icon" type="image/png" sizes="194x194" href="/icons/icon-194.png" />
   <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            primary: '#6366f1',
-            secondary: '#a855f7',
+            primary: '#4f46e5',
+            secondary: '#8b5cf6',
+            surface: 'rgba(255, 255, 255, 0.7)',
+            darkSurface: 'rgba(15, 23, 42, 0.7)',
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Outfit', 'sans-serif'],
           },
           animation: {
             'fade-in': 'fadeIn 0.5s ease-out',
@@ -54,8 +67,11 @@
   </style>
 </head>
 
-<body class="bg-slate-50 text-slate-900 antialiased">
-  <div id="root"></div>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased selection:bg-primary/30 min-h-screen">
+  <!-- Performant Static Background Gradient (No animated massive blurs!) -->
+  <div class="fixed inset-0 z-0 pointer-events-none bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-100/50 via-slate-50 to-indigo-100/40"></div>
+  
+  <div id="root" class="relative z-10 w-full h-full min-h-screen flex flex-col"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
 

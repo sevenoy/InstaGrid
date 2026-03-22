@@ -1,79 +1,106 @@
-import React, { useRef } from 'react';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import { Move, RefreshCw } from 'lucide-react';
+import React, { useRef, memo } from 'react';
+import { Move, RefreshCw, Check, X } from 'lucide-react';
 import { CollageItem } from '../types';
 
 interface PhotoCardProps {
   item: CollageItem;
   onReplace: (id: string, file: File) => void;
-  isOverlay?: boolean;
   borderRadius: number;
+  movingId?: string | null;
+  onStartMove?: (id: string) => void;
+  onCompleteMove?: (id: string) => void;
+  onCancelMove?: () => void;
 }
 
-export const PhotoCard: React.FC<PhotoCardProps> = ({ item, onReplace, isOverlay = false, borderRadius }) => {
+export const PhotoCard: React.FC<PhotoCardProps> = memo(({ 
+  item, 
+  onReplace, 
+  borderRadius,
+  movingId = null,
+  onStartMove = (_id: string) => {},
+  onCompleteMove = (_id: string) => {},
+  onCancelMove = () => {}
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id });
+  const isMovingThis = movingId === item.id;
+  const isMoveTargetMode = movingId !== null && !isMovingThis;
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 50 : 'auto',
-    opacity: isDragging ? 0.3 : 1,
-    borderRadius: `${borderRadius}px`, // Dynamic border radius
+  const style: React.CSSProperties = {
+    borderRadius: `${borderRadius}px`,
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       onReplace(item.id, e.target.files[0]);
     }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const triggerUpload = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent drag start
+    e.stopPropagation();
     fileInputRef.current?.click();
   };
 
-  // FIX: Removed 'border-2' which takes up physical space. 
-  // Used 'ring-2 ring-inset' instead, which is visual only and doesn't affect layout dimensions.
+  const handleCardClick = () => {
+    if (isMoveTargetMode) {
+      onCompleteMove(item.id);
+    }
+  };
+
   return (
     <div
-      ref={setNodeRef}
       style={style}
-      className={`relative group w-full h-full overflow-hidden bg-gray-100 ${
-        isDragging ? 'ring-2 ring-inset ring-primary shadow-2xl' : 'ring-0 hover:ring-2 hover:ring-inset hover:ring-indigo-300/50'
-      } transition-all duration-200`}
-      {...attributes}
-      {...listeners}
+      onClick={handleCardClick}
+      className={`relative group/card w-full h-full min-h-0 min-w-0 overflow-hidden bg-gray-100 ${
+        isMovingThis ? 'ring-4 ring-indigo-500 rounded-3xl z-10 scale-[1.02] shadow-xl transition-all' :
+        isMoveTargetMode ? 'cursor-pointer ring-2 ring-transparent hover:ring-indigo-300 hover:scale-[1.01] transition-all' : 
+        'ring-0 transition-shadow transition-colors duration-200'
+      }`}
     >
       <img
         src={item.url}
         alt="Collage fragment"
-        className="w-full h-full object-cover pointer-events-none select-none"
+        className={`w-full h-full object-cover select-none transition-opacity duration-300 ${isMoveTargetMode ? 'opacity-70 group-hover/card:opacity-100' : ''}`}
       />
       
       {/* Overlay Controls */}
-      {!isOverlay && (
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-2">
-          <div className="text-white text-xs font-medium bg-black/50 px-2 py-1 rounded-full mb-2 flex items-center gap-1">
-             <Move size={12} /> 拖动排序
-          </div>
-          
+      {movingId === null && (
+        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/card:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-3">
+          <button
+            onClick={(e) => { e.stopPropagation(); onStartMove(item.id); }}
+            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600/95 text-white rounded-full font-bold text-sm hover:bg-indigo-500 hover:scale-105 active:scale-95 transition-all shadow-xl cursor-pointer"
+          >
+            <Move size={16} />
+            移动位置
+          </button>
           <button
             onClick={triggerUpload}
-            className="flex items-center gap-2 px-4 py-2 bg-white text-slate-900 rounded-full font-semibold text-sm hover:bg-indigo-50 active:scale-95 transition-transform shadow-lg cursor-pointer"
-            onPointerDown={(e) => e.stopPropagation()} 
+            className="flex items-center gap-1.5 px-4 py-2 bg-white/95 text-slate-800 rounded-full font-bold text-sm hover:bg-white hover:scale-105 active:scale-95 transition-all shadow-xl cursor-pointer"
           >
-            <RefreshCw size={14} />
+            <RefreshCw size={16} className="text-indigo-600" />
             替换图片
+          </button>
+        </div>
+      )}
+
+      {isMoveTargetMode && (
+        <div className="absolute inset-0 flex items-center justify-center bg-indigo-500/20 opacity-0 group-hover/card:opacity-100 transition-opacity">
+          <div className="px-4 py-2 bg-indigo-600 text-white rounded-full font-bold text-sm shadow-xl flex items-center gap-2">
+            <Check size={16} />
+            移动到此
+          </div>
+        </div>
+      )}
+
+      {isMovingThis && (
+        <div className="absolute inset-0 bg-black/20 flex items-center justify-center transition-opacity z-20">
+          <button
+            onClick={(e) => { e.stopPropagation(); onCancelMove(); }}
+            className="flex items-center gap-1.5 px-4 py-2 bg-rose-500/95 text-white rounded-full font-bold text-sm hover:bg-rose-400 hover:scale-105 active:scale-95 transition-all shadow-xl cursor-pointer"
+          >
+            <X size={16} />
+            取消移动
           </button>
         </div>
       )}
@@ -88,4 +115,13 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({ item, onReplace, isOverlay
       />
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.item.id === nextProps.item.id &&
+    prevProps.item.url === nextProps.item.url &&
+    prevProps.borderRadius === nextProps.borderRadius &&
+    prevProps.movingId === nextProps.movingId
+  );
+});
+
+PhotoCard.displayName = 'PhotoCard';

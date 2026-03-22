@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { toPng, toBlob } from 'html-to-image';
 import {
   Download,
@@ -29,18 +29,19 @@ import {
 } from 'lucide-react';
 import { CollageGrid } from './components/CollageGrid';
 import { CollageItem, LayoutType } from './types';
+import { compressImage } from './utils/imageCompressor';
 
-// Placeholder images from Picsum
+// Placeholder images from Picsum - Downscaled to 400px to fix massive lagging out on slow networks and low-end GPUs during dragging and loading
 const DEFAULT_IMAGES = [
-  'https://picsum.photos/id/10/800/800',
-  'https://picsum.photos/id/14/800/800',
-  'https://picsum.photos/id/28/800/800',
-  'https://picsum.photos/id/43/800/800',
-  'https://picsum.photos/id/55/800/800',
-  'https://picsum.photos/id/65/800/800',
-  'https://picsum.photos/id/88/800/800',
-  'https://picsum.photos/id/103/800/800',
-  'https://picsum.photos/id/106/800/800',
+  'https://picsum.photos/id/10/400/400',
+  'https://picsum.photos/id/14/400/400',
+  'https://picsum.photos/id/28/400/400',
+  'https://picsum.photos/id/43/400/400',
+  'https://picsum.photos/id/55/400/400',
+  'https://picsum.photos/id/65/400/400',
+  'https://picsum.photos/id/88/400/400',
+  'https://picsum.photos/id/103/400/400',
+  'https://picsum.photos/id/106/400/400',
 ];
 
 const BACKGROUND_OPTIONS = [
@@ -52,6 +53,331 @@ const BACKGROUND_OPTIONS = [
   { name: '落日', value: 'bg-gradient-to-br from-orange-400 to-rose-400' },
   { name: '深海', value: 'bg-gradient-to-br from-blue-800 to-indigo-900' },
 ];
+
+// Extracted Toolbar component from the sidebar to limit re-renders
+const SettingsSidebar = React.memo(({ 
+  layout, setLayout, 
+  gap, setGap, 
+  outerPadding, setOuterPadding, 
+  borderRadius, setBorderRadius,
+  aspectRatio, setAspectRatio,
+  backgroundClass, setBackgroundClass,
+  exportFormat, setExportFormat,
+  exportQuality, setExportQuality,
+  handleDownload, isExporting, 
+  handleGlobalUpload, shuffleItems, setItems 
+}: any) => {
+  // UI State (Collapsible Sections)
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isLayoutOpen, setIsLayoutOpen] = useState(true); // Open by default
+  const [isRatioOpen, setIsRatioOpen] = useState(true);
+  const [isStyleOpen, setIsStyleOpen] = useState(false);
+  const [isBackgroundOpen, setIsBackgroundOpen] = useState(false);
+
+  // Feature: Seamless Mode
+  const setSeamlessMode = useCallback(() => {
+    setGap(0);
+    setOuterPadding(0);
+    setBorderRadius(0);
+  }, [setGap, setOuterPadding, setBorderRadius]);
+
+  const ratioOptions = [
+    { label: '3:4', value: '3 / 4', icon: RectangleVertical },
+    { label: '2:3', value: '2 / 3', icon: RectangleVertical },
+    { label: '1:1', value: '1 / 1', icon: Square },
+    { label: '4:3', value: '4 / 3', icon: RectangleHorizontal },
+    { label: '16:9', value: '16 / 9', icon: Monitor },
+    { label: '9:16', value: '9 / 16', icon: Smartphone },
+  ];
+
+  return (
+    <aside className="w-full lg:w-80 flex-shrink-0 space-y-5 order-2 pb-24 z-10 relative">
+      <div className="bg-white/70 backdrop-blur-xl p-5 rounded-2xl shadow-xl shadow-indigo-100/50 border border-white/50 space-y-4">
+        <label
+          htmlFor="bulk-upload"
+          className="border-2 border-dashed border-indigo-200 hover:border-indigo-500 bg-indigo-50/50 hover:bg-indigo-50 rounded-2xl p-4 cursor-pointer transition-all duration-300 group flex flex-col items-center justify-center gap-2 text-center shadow-inner hover:shadow-indigo-100"
+        >
+          <div className="bg-white p-3 rounded-full shadow-sm group-hover:scale-110 transition-transform duration-300">
+             <CloudUpload size={24} className="text-indigo-500 group-hover:text-indigo-600" />
+          </div>
+          <span className="text-sm font-semibold text-slate-600 group-hover:text-indigo-700 font-display">批量添加图片</span>
+          <span className="text-[10px] text-slate-400">支持拖拽或点击上传</span>
+          <input id="bulk-upload" type="file" multiple accept="image/*" className="hidden" onChange={handleGlobalUpload} />
+        </label>
+
+        <button
+          onClick={handleDownload}
+          disabled={isExporting}
+          className="relative w-full overflow-hidden flex items-center justify-center gap-2 p-4 bg-slate-900 text-white rounded-2xl hover:bg-indigo-600 transition-all duration-300 shadow-xl shadow-slate-900/20 hover:shadow-indigo-500/30 hover:-translate-y-1 font-display font-semibold text-base disabled:opacity-70 disabled:cursor-not-allowed group"
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
+          {isExporting ? '正在极速渲染...' : '下载高清大图'}
+          {!isExporting && <Download size={18} className="group-hover:translate-y-0.5 transition-transform" />}
+        </button>
+      </div>
+
+      {/* 1. Export Settings */}
+      <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-lg shadow-slate-200/40 border border-white/50 overflow-hidden text-sm">
+        <button
+          onClick={() => setIsExportOpen(!isExportOpen)}
+          className="w-full p-4 flex items-center justify-between hover:bg-white/50 transition-colors"
+        >
+          <h3 className="font-display font-semibold text-slate-700 flex items-center gap-2">
+            <div className="p-1.5 bg-indigo-100 text-indigo-600 rounded-md"><Settings size={14} /></div> 导出设置
+          </h3>
+          <div className={`transition-transform duration-300 ${isExportOpen ? 'rotate-180' : ''}`}>
+             <ChevronDown size={16} className="text-slate-400" />
+          </div>
+        </button>
+
+        {isExportOpen && (
+          <div className="px-4 pb-5 space-y-4 animate-fade-in border-t border-slate-100/50 pt-4">
+            <div>
+              <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5 mb-2"><FileImage size={12} /> 图片格式</label>
+              <div className="relative">
+                <select
+                  value={exportFormat}
+                  onChange={(e) => setExportFormat(e.target.value as any)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="jpeg">JPG (通用)</option>
+                  <option value="png">PNG (无损 - 极大)</option>
+                </select>
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
+
+            {exportFormat !== 'png' && (
+              <div className="animate-fade-in">
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="font-medium text-slate-600 flex items-center gap-1.5"><Sliders size={14} /> 压缩质量</label>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-medium ${exportQuality > 0.9 ? 'bg-green-100 text-green-700' :
+                    exportQuality > 0.7 ? 'bg-indigo-100 text-indigo-700' :
+                      'bg-amber-100 text-amber-700'
+                    }`}>
+                    {Math.round(exportQuality * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range" min="0.1" max="1.0" step="0.01"
+                  value={exportQuality}
+                  onChange={(e) => setExportQuality(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-full appearance-none cursor-pointer accent-indigo-500"
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 2. Layout & Actions */}
+      <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-lg shadow-slate-200/40 border border-white/50 overflow-hidden text-sm">
+        <button
+          onClick={() => setIsLayoutOpen(!isLayoutOpen)}
+          className="w-full p-4 flex items-center justify-between hover:bg-white/50 transition-colors"
+        >
+          <h3 className="font-display font-semibold text-slate-700 flex items-center gap-2">
+             <div className="p-1.5 bg-fuchsia-100 text-fuchsia-600 rounded-md"><Grid2X2 size={14} /></div> 布局与操作
+          </h3>
+          <div className={`transition-transform duration-300 ${isLayoutOpen ? 'rotate-180' : ''}`}>
+             <ChevronDown size={16} className="text-slate-400" />
+          </div>
+        </button>
+
+        {isLayoutOpen && (
+          <div className="px-4 pb-5 space-y-4 animate-fade-in border-t border-slate-100/50 pt-4">
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setLayout(LayoutType.GRID_2X2)}
+                className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${layout === LayoutType.GRID_2X2
+                  ? 'border-indigo-500 bg-indigo-50/80 text-indigo-700 shadow-md shadow-indigo-100'
+                  : 'border-transparent bg-slate-100 hover:bg-slate-200/70 text-slate-500'
+                  }`}
+              >
+                <Grid2X2 size={24} className="mb-2" />
+                <span className="text-xs font-bold font-display tracking-wider">2 x 2</span>
+              </button>
+              <button
+                onClick={() => setLayout(LayoutType.GRID_3X3)}
+                className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${layout === LayoutType.GRID_3X3
+                  ? 'border-fuchsia-500 bg-fuchsia-50/80 text-fuchsia-700 shadow-md shadow-fuchsia-100'
+                  : 'border-transparent bg-slate-100 hover:bg-slate-200/70 text-slate-500'
+                  }`}
+              >
+                <Grid3X3 size={24} className="mb-2" />
+                <span className="text-xs font-bold font-display tracking-wider">3 x 3</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={shuffleItems}
+                className="flex items-center justify-center gap-2 p-3 bg-white border border-slate-200 shadow-sm text-slate-600 rounded-xl hover:border-indigo-300 hover:text-indigo-600 hover:shadow-md transition-all font-medium text-xs"
+              >
+                <Shuffle size={14} />
+                <span>随机位置</span>
+              </button>
+              <button
+                onClick={() => setItems((prev: any[]) => {
+                  prev.forEach(item => {
+                    if (item.url.startsWith('blob:')) {
+                      URL.revokeObjectURL(item.url);
+                    }
+                  });
+                  return prev.map((item, idx) => ({ ...item, url: DEFAULT_IMAGES[idx % DEFAULT_IMAGES.length] + `?r=${Date.now()}` }));
+                })}
+                className="flex items-center justify-center gap-2 p-3 bg-white border border-slate-200 shadow-sm text-slate-600 rounded-xl hover:border-rose-300 hover:text-rose-600 hover:shadow-md transition-all font-medium text-xs"
+              >
+                <RotateCcw size={14} />
+                <span>重置图片</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Dimensions */}
+      <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-lg shadow-slate-200/40 border border-white/50 overflow-hidden text-sm">
+        <button
+          onClick={() => setIsRatioOpen(!isRatioOpen)}
+          className="w-full p-4 flex items-center justify-between hover:bg-white/50 transition-colors"
+        >
+          <h3 className="font-display font-semibold text-slate-700 flex items-center gap-2">
+            <div className="p-1.5 bg-blue-100 text-blue-600 rounded-md"><Maximize size={14} /></div> 尺寸与比例
+          </h3>
+          <div className={`transition-transform duration-300 ${isRatioOpen ? 'rotate-180' : ''}`}>
+             <ChevronDown size={16} className="text-slate-400" />
+          </div>
+        </button>
+
+        {isRatioOpen && (
+          <div className="px-4 pb-5 animate-fade-in border-t border-slate-100/50 pt-4">
+            <div className="grid grid-cols-3 gap-2">
+                {ratioOptions.map((option) => {
+                  const Icon = option.icon;
+                  return (
+                    <button 
+                      key={option.label} 
+                      onClick={() => setAspectRatio(option.value)}
+                      className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
+                        aspectRatio === option.value 
+                        ? 'border-blue-500 bg-blue-50/80 text-blue-700 shadow-sm' 
+                        : 'border-transparent bg-slate-100 text-slate-500 hover:bg-slate-200/70'
+                      }`}
+                    >
+                      <Icon size={18} className="mb-1" />
+                      <span className="text-[10px] font-bold font-display tracking-widest">{option.label}</span>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 4. Styles */}
+      <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-lg shadow-slate-200/40 border border-white/50 overflow-hidden text-sm">
+        <button
+          onClick={() => setIsStyleOpen(!isStyleOpen)}
+          className="w-full p-4 flex items-center justify-between hover:bg-white/50 transition-colors"
+        >
+          <h3 className="font-display font-semibold text-slate-700 flex items-center gap-2">
+            <div className="p-1.5 bg-rose-100 text-rose-600 rounded-md"><Palette size={14} /></div> 样式微调
+          </h3>
+          <div className={`transition-transform duration-300 ${isStyleOpen ? 'rotate-180' : ''}`}>
+             <ChevronDown size={16} className="text-slate-400" />
+          </div>
+        </button>
+
+        {isStyleOpen && (
+          <div className="px-4 pb-5 space-y-5 animate-fade-in border-t border-slate-100/50 pt-4">
+            <div className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+              <span className="text-xs font-semibold text-slate-500">快速预设</span>
+              <button
+                onClick={setSeamlessMode}
+                className="text-xs bg-gradient-to-r from-rose-400 to-orange-400 text-white px-3 py-1.5 rounded-full font-bold shadow-md hover:shadow-lg hover:scale-105 transition-all"
+              >
+                ✨ 一键无缝
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="font-medium text-slate-600 flex items-center gap-1.5"><Scaling size={14} /> 画布外边距</label>
+                  <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-mono shadow-inner">{outerPadding}px</span>
+                </div>
+                <input
+                  type="range" min="0" max="80" value={outerPadding}
+                  onChange={(e) => setOuterPadding(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-full appearance-none cursor-pointer accent-rose-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="font-medium text-slate-600 flex items-center gap-1.5"><LayoutGrid size={14} /> 图片间距</label>
+                  <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-mono shadow-inner">{gap}px</span>
+                </div>
+                <input
+                  type="range" min="0" max="60" value={gap}
+                  onChange={(e) => setGap(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-full appearance-none cursor-pointer accent-rose-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="font-medium text-slate-600 flex items-center gap-1.5"><Circle size={14} /> 圆角半径</label>
+                  <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-mono shadow-inner">{borderRadius}px</span>
+                </div>
+                <input
+                  type="range" min="0" max="80" value={borderRadius}
+                  onChange={(e) => setBorderRadius(Number(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-full appearance-none cursor-pointer accent-rose-500"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 5. Background Color */}
+      <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-lg shadow-slate-200/40 border border-white/50 overflow-hidden text-sm">
+        <button
+          onClick={() => setIsBackgroundOpen(!isBackgroundOpen)}
+          className="w-full p-4 flex items-center justify-between hover:bg-white/50 transition-colors"
+        >
+          <h3 className="font-display font-semibold text-slate-700 flex items-center gap-2">
+            <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded-md"><PaintBucket size={14} /></div> 背景风格
+          </h3>
+          <div className={`transition-transform duration-300 ${isBackgroundOpen ? 'rotate-180' : ''}`}>
+             <ChevronDown size={16} className="text-slate-400" />
+          </div>
+        </button>
+
+        {isBackgroundOpen && (
+          <div className="px-4 pb-5 animate-fade-in border-t border-slate-100/50 pt-4">
+            <div className="grid grid-cols-2 gap-2">
+                {BACKGROUND_OPTIONS.map((bg) => (
+                  <button 
+                    key={bg.name}
+                    onClick={() => setBackgroundClass(bg.value)}
+                    className={`h-10 rounded-xl font-medium text-xs border-2 transition-all overflow-hidden relative shadow-sm hover:shadow-md ${
+                      backgroundClass === bg.value ? 'border-emerald-500 ring-2 ring-emerald-200 outline-none text-slate-800' : 'border-transparent text-slate-600'
+                    }`}
+                  >
+                    <div className={`absolute inset-0 ${bg.value} opacity-20`}></div>
+                    <span className="relative z-10 mix-blend-hard-light font-display">{bg.name}</span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+});
 
 const App: React.FC = () => {
   const [layout, setLayout] = useState<LayoutType>(LayoutType.GRID_3X3);
@@ -68,13 +394,6 @@ const App: React.FC = () => {
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('png');
   const [exportQuality, setExportQuality] = useState<number>(0.85);
 
-  // UI State (Collapsible Sections)
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isLayoutOpen, setIsLayoutOpen] = useState(false);
-  const [isRatioOpen, setIsRatioOpen] = useState(false);
-  const [isStyleOpen, setIsStyleOpen] = useState(false);
-  const [isBackgroundOpen, setIsBackgroundOpen] = useState(false);
-
   const [isExporting, setIsExporting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const collageRef = useRef<HTMLDivElement>(null);
@@ -86,6 +405,12 @@ const App: React.FC = () => {
     setItems((prev) => {
       // If we are shrinking, slice the array
       if (prev.length >= count) {
+        // Free up memory for items being removed automatically
+        prev.slice(count).forEach(item => {
+          if (item.url.startsWith('blob:')) {
+            URL.revokeObjectURL(item.url);
+          }
+        });
         return prev.slice(0, count);
       }
       // If growing, add new items
@@ -100,7 +425,7 @@ const App: React.FC = () => {
     });
   }, [layout]);
 
-  const handleDownload = async () => {
+  const handleDownload = React.useCallback(async () => {
     if (!collageRef.current) return;
     setIsExporting(true);
 
@@ -156,10 +481,14 @@ const App: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
-  };
+  }, [exportFormat, exportQuality, layout]);
 
-  const handleFiles = (files: File[]) => {
-    if (files.length === 0) return;
+  const handleFiles = async (rawFiles: File[]) => {
+    if (rawFiles.length === 0) return;
+
+    // Compress all files in parallel before processing layout
+    // We wrap this so the UI doesn't block entirely, though it might take a moment.
+    const files = await Promise.all(rawFiles.map(f => compressImage(f)));
 
     let newLayout = layout;
 
@@ -179,6 +508,12 @@ const App: React.FC = () => {
       let nextItems = [...prev];
 
       if (nextItems.length > targetCount) {
+        // Clean memory for items that are completely removed
+        nextItems.slice(targetCount).forEach(item => {
+          if (item.url.startsWith('blob:')) {
+            URL.revokeObjectURL(item.url);
+          }
+        });
         nextItems = nextItems.slice(0, targetCount);
       }
       while (nextItems.length < targetCount) {
@@ -190,9 +525,13 @@ const App: React.FC = () => {
 
       files.forEach((file, idx) => {
         if (idx < targetCount) {
+          // Clean memory for old blob image being replaced
+          if (nextItems[idx].url.startsWith('blob:')) {
+            URL.revokeObjectURL(nextItems[idx].url);
+          }
           nextItems[idx] = {
             id: `upload-${Date.now()}-${idx}`,
-            url: URL.createObjectURL(file)
+            url: URL.createObjectURL(file as File)
           };
         }
       });
@@ -201,9 +540,9 @@ const App: React.FC = () => {
     });
   };
 
-  const handleGlobalUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleGlobalUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
-    handleFiles(Array.from(e.target.files));
+    await handleFiles(Array.from(e.target.files));
     e.target.value = '';
   };
 
@@ -222,16 +561,20 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = React.useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
     const files = (Array.from(e.dataTransfer.files) as File[]).filter(f => f.type.startsWith('image/'));
-    handleFiles(files);
-  };
+    try {
+      await handleFiles(files);
+    } catch (err) {
+      console.error("Upload failed", err);
+    }
+  }, [layout]);
 
   // Feature: Shuffle Images
-  const shuffleItems = () => {
+  const shuffleItems = React.useCallback(() => {
     setItems(prev => {
       const shuffled = [...prev];
       for (let i = shuffled.length - 1; i > 0; i--) {
@@ -240,23 +583,9 @@ const App: React.FC = () => {
       }
       return shuffled;
     });
-  };
+  }, []);
 
-  // Feature: Seamless Mode
-  const setSeamlessMode = () => {
-    setGap(0);
-    setOuterPadding(0);
-    setBorderRadius(0);
-  };
 
-  const ratioOptions = [
-    { label: '3:4', value: '3 / 4', icon: RectangleVertical },
-    { label: '2:3', value: '2 / 3', icon: RectangleVertical },
-    { label: '1:1', value: '1 / 1', icon: Square },
-    { label: '4:3', value: '4 / 3', icon: RectangleHorizontal },
-    { label: '16:9', value: '16 / 9', icon: Monitor },
-    { label: '9:16', value: '9 / 16', icon: Smartphone },
-  ];
 
   return (
     <div
@@ -266,336 +595,93 @@ const App: React.FC = () => {
       onDrop={handleDrop}
     >
 
-      {/* Drag Overlay */}
+      {/* Drag Overlay global - with smooth backdrop */}
       {isDragOver && (
-        <div className="fixed inset-0 bg-indigo-500/10 backdrop-blur-sm z-50 flex items-center justify-center p-8 pointer-events-none">
-          <div className="border-4 border-indigo-500 border-dashed rounded-3xl w-full h-full flex flex-col items-center justify-center bg-white/50 animate-pulse">
-            <CloudUpload size={64} className="text-indigo-600 mb-4" />
-            <h2 className="text-3xl font-bold text-slate-800">释放图片</h2>
-            <p className="text-lg text-slate-600 mt-2">自动排列 4 张或 9 张照片</p>
+        <div className="fixed inset-0 bg-white/40 backdrop-blur-md z-[100] flex items-center justify-center p-8 pointer-events-none transition-all duration-500">
+          <div className="border-4 border-indigo-500 border-dashed rounded-[3rem] w-full max-w-4xl h-full max-h-[80vh] flex flex-col items-center justify-center bg-white/60 animate-pulse shadow-2xl">
+            <div className="bg-indigo-100 p-6 rounded-full mb-6 text-indigo-600 shadow-inner">
+               <CloudUpload size={80} strokeWidth={1.5} />
+            </div>
+            <h2 className="text-4xl font-extrabold text-slate-800 font-display tracking-tight">释放图片立即生成</h2>
+            <p className="text-xl text-slate-500 mt-4 font-medium">支持极速拖入替换，自动适应 2x2 或 3x3 布局</p>
           </div>
         </div>
       )}
 
-      {/* Header */}
-      <header className="w-full bg-white border-b border-gray-200 sticky top-0 z-30 px-6 py-3 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="bg-indigo-600 p-2 rounded-lg text-white">
-            <LayoutGrid size={20} />
+      {/* Premium Header */}
+      <header className="w-full bg-white/60 backdrop-blur-2xl border-b border-white/50 sticky top-0 z-40 px-6 py-4 flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="bg-gradient-to-br from-indigo-500 to-primary p-2.5 rounded-xl text-white shadow-lg shadow-indigo-500/30">
+            <LayoutGrid size={24} strokeWidth={2.5} />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-900 tracking-tight">
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight font-display bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600">
               InstaGrid
             </h1>
-            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Pro Collage Maker</p>
+            <p className="text-[11px] text-slate-500 font-bold uppercase tracking-[0.2em] font-display">Pro Collage Maker</p>
           </div>
         </div>
 
-        <div className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-500">
-          <span className="flex items-center gap-1"><Zap size={12} className="text-amber-500" /> 拖拽图片可直接上传</span>
-          <span className="w-px h-3 bg-slate-200"></span>
-          <span className="flex items-center gap-1"><Zap size={12} className="text-amber-500" /> 拖动方块交换位置</span>
+        <div className="hidden md:flex items-center gap-6 px-6 py-2 bg-white/50 rounded-full border border-white/60 shadow-inner backdrop-blur-xl">
+          <span className="flex items-center gap-2 text-xs font-semibold text-slate-600"><Zap size={14} className="text-amber-500" /> 直接拖入图片极速编辑</span>
+          <span className="w-px h-4 bg-slate-300"></span>
+          <span className="flex items-center gap-2 text-xs font-semibold text-slate-600"><Zap size={14} className="text-amber-500" /> 任意拖动卡片交换顺序</span>
         </div>
 
         <a
           href="#"
-          className="text-slate-400 hover:text-slate-800 transition-colors"
+          className="p-2.5 bg-white border border-slate-200 rounded-full text-slate-400 hover:text-slate-800 hover:shadow-md transition-all duration-300"
           title="Github"
         >
           <Github size={20} />
         </a>
       </header>
 
-      {/* Main Content - Flex Column on Mobile, Row on Desktop */}
-      <main className="flex-1 container mx-auto px-4 py-6 flex flex-col md:flex-col lg:flex-row gap-6 items-start justify-center overflow-hidden">
-
-        {/* Collage Display Area - NOW ON TOP */}
-        <div className="w-full lg:flex-1 flex items-start justify-center min-h-[400px] md:min-h-[500px] bg-slate-100/50 rounded-3xl border-2 border-dashed border-slate-200 p-4 md:p-8 overflow-auto order-1">
-          {/* The Canvas */}
-          <div
-            className={`relative shadow-2xl transition-colors duration-300 ease-in-out ${backgroundClass}`}
-            style={{
-              aspectRatio: aspectRatio,
-              padding: `${outerPadding}px`,
-              width: '100%',
-              maxWidth: '800px'
-            }}
-            ref={collageRef}
-          >
-            <CollageGrid
-              items={items}
-              layout={layout}
-              setItems={setItems}
-              gap={gap}
-              borderRadius={borderRadius}
-            />
+      {/* Main Content */}
+      <main className="flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8 items-start justify-center relative z-10 w-full max-w-7xl">
+        
+        {/* Collage Display Area - Centered and Elevated */}
+        <div className="w-full lg:flex-1 flex items-center justify-center min-h-[500px] md:min-h-[700px] bg-white/60 backdrop-blur-md rounded-[2.5rem] border border-white/60 p-4 md:p-12 shadow-xl shadow-slate-200/50 overflow-hidden order-1 group">
+          {/* The Canvas wrapper with beautiful shadow propagation */}
+          {/* Removed: group-hover:scale-[1.01] transition-transform ease-out because it breaks dnd-kit DragOverlay viewport boundary calculations! */}
+          <div className="relative w-full flex justify-center items-center">
+            {/* Minimal Ambient Glow to boost GPU frame rates over massive blurs */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 to-transparent rounded-full -z-10 blur-xl"></div>
+            
+            <div
+              className={`relative shadow-[0_20px_50px_-12px_rgba(0,0,0,0.15)] transition-colors duration-500 ease-in-out ${backgroundClass} ring-1 ring-black/5 rounded-sm`}
+              style={{
+                aspectRatio: aspectRatio,
+                padding: `${outerPadding}px`,
+                width: '100%',
+                maxWidth: '850px'
+              }}
+              ref={collageRef}
+            >
+              <CollageGrid
+                items={items}
+                layout={layout}
+                setItems={setItems}
+                gap={gap}
+                borderRadius={borderRadius}
+              />
+            </div>
           </div>
         </div>
 
         {/* Settings Panel - NOW BELOW (Order 2) */}
-        <aside className="w-full lg:w-80 flex-shrink-0 space-y-4 order-2 pb-10">
-
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-3">
-            <div
-              onClick={() => document.getElementById('bulk-upload')?.click()}
-              className="border-2 border-dashed border-slate-300 hover:border-indigo-500 hover:bg-indigo-50 rounded-xl p-3 cursor-pointer transition-all group flex items-center justify-center gap-3 text-center"
-            >
-              <CloudUpload size={20} className="text-slate-400 group-hover:text-indigo-600" />
-              <span className="text-xs font-bold text-slate-600 group-hover:text-indigo-700">添加本地图片</span>
-              <input id="bulk-upload" type="file" multiple accept="image/*" className="hidden" onChange={handleGlobalUpload} />
-            </div>
-
-            <button
-              onClick={handleDownload}
-              disabled={isExporting}
-              className="w-full flex items-center justify-center gap-2 p-3.5 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all shadow-lg shadow-slate-300 hover:shadow-xl hover:-translate-y-0.5 font-bold text-sm disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              {isExporting ? '正在渲染...' : '下载高清大图'}
-              {!isExporting && <Download size={16} />}
-            </button>
-          </div>
-
-          {/* 1. Export Settings & Download (Top Priority) */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <button
-              onClick={() => setIsExportOpen(!isExportOpen)}
-              className="w-full p-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors"
-            >
-              <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
-                <Settings size={12} /> 导出设置
-              </h3>
-              {isExportOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
-            </button>
-
-            {isExportOpen && (
-              <div className="px-4 pb-4 space-y-4 animate-fade-in border-t border-slate-50 pt-4">
-                {/* Format Selection */}
-                <div>
-                  <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5 mb-2"><FileImage size={12} /> 图片格式</label>
-                  <div className="relative">
-                    <select
-                      value={exportFormat}
-                      onChange={(e) => setExportFormat(e.target.value as any)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="jpeg">JPG (通用)</option>
-                      <option value="png">PNG (无损 - 极大)</option>
-                    </select>
-                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
-                </div>
-
-                {/* Quality Slider (Hidden for PNG) */}
-                {exportFormat !== 'png' && (
-                  <div className="animate-fade-in">
-                    <div className="flex justify-between items-center mb-1.5">
-                      <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5"><Sliders size={12} /> 压缩质量</label>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${exportQuality > 0.9 ? 'bg-green-100 text-green-700' :
-                        exportQuality > 0.7 ? 'bg-blue-100 text-blue-700' :
-                          'bg-amber-100 text-amber-700'
-                        }`}>
-                        {Math.round(exportQuality * 100)}%
-                      </span>
-                    </div>
-                    <input
-                      type="range" min="0.1" max="1.0" step="0.01"
-                      value={exportQuality}
-                      onChange={(e) => setExportQuality(Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 2. Layout & Actions */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <button
-              onClick={() => setIsLayoutOpen(!isLayoutOpen)}
-              className="w-full p-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors"
-            >
-              <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
-                <Grid2X2 size={12} /> 布局与操作
-              </h3>
-              {isLayoutOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
-            </button>
-
-            {isLayoutOpen && (
-              <div className="px-4 pb-4 space-y-4 animate-fade-in border-t border-slate-50 pt-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setLayout(LayoutType.GRID_2X2)}
-                    className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${layout === LayoutType.GRID_2X2
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-500'
-                      }`}
-                  >
-                    <Grid2X2 size={20} className="mb-1" />
-                    <span className="text-xs font-bold">2 x 2</span>
-                  </button>
-                  <button
-                    onClick={() => setLayout(LayoutType.GRID_3X3)}
-                    className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${layout === LayoutType.GRID_3X3
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-500'
-                      }`}
-                  >
-                    <Grid3X3 size={20} className="mb-1" />
-                    <span className="text-xs font-bold">3 x 3</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={shuffleItems}
-                    className="flex items-center justify-center gap-2 p-2.5 bg-slate-50 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors font-medium text-xs border border-slate-200"
-                  >
-                    <Shuffle size={14} />
-                    <span>随机位置</span>
-                  </button>
-                  <button
-                    onClick={() => setItems(prev => prev.map((item, idx) => ({ ...item, url: DEFAULT_IMAGES[idx % DEFAULT_IMAGES.length] + `?r=${Date.now()}` })))}
-                    className="flex items-center justify-center gap-2 p-2.5 bg-slate-50 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors font-medium text-xs border border-slate-200"
-                  >
-                    <RotateCcw size={14} />
-                    <span>重置图片</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 3. Dimensions & Ratio */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <button
-              onClick={() => setIsRatioOpen(!isRatioOpen)}
-              className="w-full p-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors"
-            >
-              <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
-                <Maximize size={12} /> 尺寸与比例
-              </h3>
-              {isRatioOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
-            </button>
-
-            {isRatioOpen && (
-              <div className="px-4 pb-4 animate-fade-in border-t border-slate-50 pt-4">
-                <div className="relative">
-                  <select
-                    value={aspectRatio}
-                    onChange={(e) => setAspectRatio(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {ratioOptions.map((option) => (
-                      <option key={option.label} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 4. Styles (Gaps, Padding, Radius) */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <button
-              onClick={() => setIsStyleOpen(!isStyleOpen)}
-              className="w-full p-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors"
-            >
-              <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
-                <Palette size={12} /> 样式微调
-              </h3>
-              {isStyleOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
-            </button>
-
-            {isStyleOpen && (
-              <div className="px-4 pb-4 space-y-4 animate-fade-in border-t border-slate-50 pt-4">
-                <div className="flex justify-end">
-                  <button
-                    onClick={setSeamlessMode}
-                    className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-bold hover:bg-indigo-200 transition-colors"
-                  >
-                    一键无缝
-                  </button>
-                </div>
-
-                {/* Sliders */}
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5"><Scaling size={12} /> 画布外边距</label>
-                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-mono">{outerPadding}px</span>
-                    </div>
-                    <input
-                      type="range" min="0" max="60" value={outerPadding}
-                      onChange={(e) => setOuterPadding(Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5"><LayoutGrid size={12} /> 图片间距</label>
-                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-mono">{gap}px</span>
-                    </div>
-                    <input
-                      type="range" min="0" max="40" value={gap}
-                      onChange={(e) => setGap(Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <label className="text-xs font-medium text-slate-700 flex items-center gap-1.5"><Circle size={12} /> 圆角半径</label>
-                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-mono">{borderRadius}px</span>
-                    </div>
-                    <input
-                      type="range" min="0" max="60" value={borderRadius}
-                      onChange={(e) => setBorderRadius(Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 5. Background Color */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <button
-              onClick={() => setIsBackgroundOpen(!isBackgroundOpen)}
-              className="w-full p-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors"
-            >
-              <h3 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
-                <PaintBucket size={12} /> 背景风格
-              </h3>
-              {isBackgroundOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
-            </button>
-
-            {isBackgroundOpen && (
-              <div className="px-4 pb-4 animate-fade-in border-t border-slate-50 pt-4">
-                <div className="relative">
-                  <select
-                    value={backgroundClass}
-                    onChange={(e) => setBackgroundClass(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {BACKGROUND_OPTIONS.map((bg) => (
-                      <option key={bg.name} value={bg.value}>
-                        {bg.name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
-              </div>
-            )}
-          </div>
-
-        </aside>
+        <SettingsSidebar 
+          layout={layout} setLayout={setLayout}
+          gap={gap} setGap={setGap}
+          outerPadding={outerPadding} setOuterPadding={setOuterPadding}
+          borderRadius={borderRadius} setBorderRadius={setBorderRadius}
+          aspectRatio={aspectRatio} setAspectRatio={setAspectRatio}
+          backgroundClass={backgroundClass} setBackgroundClass={setBackgroundClass}
+          exportFormat={exportFormat} setExportFormat={setExportFormat}
+          exportQuality={exportQuality} setExportQuality={setExportQuality}
+          handleDownload={handleDownload} isExporting={isExporting}
+          handleGlobalUpload={handleGlobalUpload} shuffleItems={shuffleItems} setItems={setItems}
+        />
       </main>
     </div>
   );
